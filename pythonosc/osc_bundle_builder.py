@@ -51,7 +51,7 @@ class OscBundleBuilder(object):
                     content, osc_bundle.OscBundle
                 ):
                     size = content.size
-                    dgram += osc_types.write_int(size)
+                    dgram += osc_types.write_size(size)
                     dgram += content.dgram
                 else:
                     raise BuildError(

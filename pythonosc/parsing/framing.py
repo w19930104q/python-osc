@@ -1,8 +1,8 @@
 """OSC message codecs for different framing strategies."""
 
 from abc import ABCMeta, abstractmethod
-from struct import pack, unpack_from
 
+from pythonosc.parsing import osc_types
 from pythonosc.parsing.slip import (
     END,
     decode as slip_decode,
@@ -72,11 +72,15 @@ class BinaryLengthFraming(Framing):
     """Length-prefixed framing for OSC 1.0.
 
     See the "OSC Packets" section from OSC 1.0 Specification for details.
+
+    The length prefix is the same non-negative int32 size prefix used for
+    bundle elements, encoded and checked via ``osc_types.write_size`` and
+    ``osc_types.get_size``.
     """
 
     def encode(self, dgram: bytes) -> bytes:
         if dgram:
-            return pack("!I", len(dgram)) + dgram
+            return osc_types.write_size(len(dgram)) + dgram
         return b""
 
     def decode_stream(
@@ -85,9 +89,11 @@ class BinaryLengthFraming(Framing):
         messages = []
         pos = start
 
-        while (data_pos := pos + 4) < len(buf):
-            (length,) = unpack_from("!I", buf, pos)
-            end = data_pos + length
+        while len(buf) - pos >= osc_types.INT_DGRAM_LEN:
+            # A negative size prefix is invalid stream data, not an
+            # incomplete packet: let the ParseError propagate.
+            size, data_pos = osc_types.get_size(buf, pos)
+            end = data_pos + size
 
             if end > len(buf):
                 break

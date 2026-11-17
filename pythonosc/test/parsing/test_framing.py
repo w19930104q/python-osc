@@ -115,6 +115,20 @@ class TestBinaryLengthFraming(CommonFramingTest):
     def test_encode(self, framing: Framing) -> None:
         assert framing.encode(b"test") == b"\x00\x00\x00\x04test"
 
+    def test_encode_uses_shared_size_prefix(self, framing: Framing) -> None:
+        from pythonosc.parsing import osc_types
+
+        assert framing.encode(b"test") == osc_types.write_size(4) + b"test"
+
+    def test_negative_size_prefix_raises(self, framing: Framing) -> None:
+        from pythonosc.parsing import osc_types
+
+        with raises(osc_types.ParseError, match="Size prefix cannot be negative"):
+            framing.decode_stream(b"\xff\xff\xff\xff")
+
+    def test_header_only_stream_is_incomplete(self, framing: Framing) -> None:
+        assert framing.decode_stream(b"\x00\x00") == ([], 0)
+
 
 class TestSquareFraming(CommonFramingTest):
     @fixture

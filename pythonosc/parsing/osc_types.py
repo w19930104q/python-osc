@@ -22,7 +22,8 @@ class BuildError(Exception):
 IMMEDIATELY = 0
 
 # Datagram length in bytes for types that have a fixed size.
-_INT_DGRAM_LEN = 4
+INT_DGRAM_LEN = 4  # Also the length of the size prefix shared with framing.
+_INT_DGRAM_LEN = INT_DGRAM_LEN
 _INT64_DGRAM_LEN = 8
 _UINT64_DGRAM_LEN = 8
 _FLOAT_DGRAM_LEN = 4
@@ -106,7 +107,7 @@ def write_int(val: int) -> bytes:
         raise BuildError(f"Wrong argument value passed: {e}")
 
 
-def get_int(dgram: bytes, start_index: int) -> Tuple[int, int]:
+def get_int(dgram: Union[bytes, bytearray], start_index: int) -> Tuple[int, int]:
     """Get a 32-bit big-endian two's complement integer from the datagram.
 
     Args:
@@ -128,6 +129,42 @@ def get_int(dgram: bytes, start_index: int) -> Tuple[int, int]:
         )
     except (struct.error, TypeError) as e:
         raise ParseError(f"Could not parse datagram {e}")
+
+
+def write_size(val: int) -> bytes:
+    """Returns the datagram for a non-negative int32 size prefix.
+
+    Size prefixes delimit bundle elements and length-framed stream packets;
+    both paths share this codec so they agree on the wire format.
+
+    Raises:
+      - BuildError if the size is negative or does not fit an OSC int32.
+    """
+    if val < 0:
+        raise BuildError("Size prefix cannot be negative")
+    return write_int(val)
+
+
+def get_size(dgram: Union[bytes, bytearray], start_index: int) -> Tuple[int, int]:
+    """Get a non-negative int32 size prefix from the datagram.
+
+    Shared by OSC bundle element parsing and OSC 1.0 stream framing so both
+    enforce the same bounds checks.
+
+    Args:
+      dgram: A datagram packet.
+      start_index: An index where the size prefix starts in the datagram.
+
+    Returns:
+      A tuple containing the size and the new end index.
+
+    Raises:
+      ParseError if fewer than INT_DGRAM_LEN bytes remain or the size is negative.
+    """
+    size, next_index = get_int(dgram, start_index)
+    if size < 0:
+        raise ParseError("Size prefix cannot be negative")
+    return size, next_index
 
 
 def write_int64(val: int) -> bytes:
@@ -370,8 +407,7 @@ def get_date(dgram: bytes, start_index: int) -> Tuple[float, int]:
     if len(dgram[start_index:]) < _TIMETAG_DGRAM_LEN:
         raise ParseError("Datagram is too short")
     timetag, start_index = get_uint64(dgram, start_index)
-    seconds = timetag * ntp._NTP_TIMESTAMP_TO_SECONDS
-    return ntp.ntp_time_to_system_epoch(seconds), start_index
+    return ntp.timetag_to_system_time(timetag), start_index
 
 
 def write_date(system_time: Union[int, float]) -> bytes:

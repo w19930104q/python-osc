@@ -41,22 +41,43 @@ def parse_timestamp(timestamp: int) -> Timestamp:
     return Timestamp(seconds, fraction)
 
 
+def timetag_to_system_time(timetag: int) -> float:
+    """Convert a 64-bit NTP timetag to system time in seconds.
+
+    This is the single conversion used by every parsing path (OSC time tags,
+    bundle dates and raw NTP timestamps) so that all of them agree bit for bit.
+    """
+    return timetag * _NTP_TIMESTAMP_TO_SECONDS - _NTP_DELTA
+
+
 def ntp_to_system_time(timestamp: bytes) -> float:
     """Convert a NTP timestamp to system time in seconds."""
     try:
         ts = struct.unpack(">Q", timestamp)[0]
     except Exception as e:
         raise NtpError(e)
-    return ts * _NTP_TIMESTAMP_TO_SECONDS - _NTP_DELTA
+    return timetag_to_system_time(ts)
 
 
 def system_time_to_ntp(seconds: float) -> bytes:
-    """Convert a system time in seconds to NTP timestamp."""
+    """Convert a system time in seconds to NTP timestamp.
+
+    The integer and fractional parts are scaled separately so the result does
+    not depend on the rounding of one large float multiplication, and any
+    invalid or out-of-range input surfaces as a stable NtpError.
+    """
     try:
-        seconds = seconds + _NTP_DELTA
-    except TypeError as e:
+        ntp_seconds = seconds + _NTP_DELTA
+        whole = int(ntp_seconds)
+        fraction = ntp_seconds - whole
+        if fraction < 0:  # int() truncates towards zero, floor instead.
+            whole -= 1
+            fraction += 1.0
+        return struct.pack(
+            ">Q", (whole << 32) | int(fraction * _SECONDS_TO_NTP_TIMESTAMP)
+        )
+    except (TypeError, ValueError, OverflowError, struct.error) as e:
         raise NtpError(e)
-    return struct.pack(">Q", int(seconds * _SECONDS_TO_NTP_TIMESTAMP))
 
 
 def ntp_time_to_system_epoch(seconds: float) -> float:

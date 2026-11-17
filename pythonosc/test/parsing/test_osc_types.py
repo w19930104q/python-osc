@@ -353,6 +353,40 @@ class TestNTPTimestamp(unittest.TestCase):
         timetag = b"\xe1=BT*\xf1\x98\x00"
         self.assertEqual(timetag, osc_types.write_date(time))
 
+    def test_get_date_matches_shared_timetag_conversion(self):
+        time = 1569899476.167749
+        dgram = osc_types.write_date(time)
+        timetag = osc_types.get_uint64(dgram, 0)[0]
+        self.assertEqual(
+            ntp.timetag_to_system_time(timetag), osc_types.get_date(dgram, 0)[0]
+        )
+
+
+class TestSizePrefix(unittest.TestCase):
+    def test_write_size(self):
+        self.assertEqual(b"\x00\x00\x00\x04", osc_types.write_size(4))
+
+    def test_write_size_raises_on_negative(self):
+        self.assertRaises(osc_types.BuildError, osc_types.write_size, -1)
+
+    def test_get_size(self):
+        self.assertEqual(
+            (4, 8), osc_types.get_size(b"\x00" * 4 + b"\x00\x00\x00\x04", 4)
+        )
+
+    def test_get_size_raises_on_negative(self):
+        self.assertRaises(osc_types.ParseError, osc_types.get_size, b"\xff" * 4, 0)
+
+    def test_get_size_raises_on_short_datagram(self):
+        self.assertRaises(osc_types.ParseError, osc_types.get_size, b"\x00" * 3, 0)
+
+    def test_size_round_trip(self):
+        for size in (0, 4, 4096, 2**31 - 1):
+            dgram = osc_types.write_size(size)
+            self.assertEqual(
+                (size, osc_types.INT_DGRAM_LEN), osc_types.get_size(dgram, 0)
+            )
+
 
 class TestBuildMethods(unittest.TestCase):
     def test_string(self):

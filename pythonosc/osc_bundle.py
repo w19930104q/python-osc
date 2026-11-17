@@ -48,9 +48,9 @@ class OscBundle(object):
             # contents, and will always be a multiple of 4. The contents are either
             # an OSC Message or an OSC Bundle.
             while self._dgram[index:]:
-                # Get the sub content size.
-                content_size, index = osc_types.get_int(self._dgram, index)
-                if content_size <= 0 or content_size % 4:
+                # Get the sub content size (shared non-negative int32 codec).
+                content_size, index = osc_types.get_size(self._dgram, index)
+                if content_size == 0 or content_size % 4:
                     raise ParseError(
                         "Invalid bundle element size: {}".format(content_size)
                     )
